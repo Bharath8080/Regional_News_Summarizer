@@ -187,74 +187,118 @@ with tab1:
                     if not url.startswith(('http://', 'https://')):
                         url = 'https://' + url
                         
-                    # Send request with a user agent and timeout
+                    # Enhanced headers to mimic a real browser
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                        'Accept-Language': 'en-US,en;q=0.5',
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Encoding': 'gzip, deflate, br',
                         'Connection': 'keep-alive',
                         'Upgrade-Insecure-Requests': '1',
+                        'Sec-Fetch-Dest': 'document',
+                        'Sec-Fetch-Mode': 'navigate',
+                        'Sec-Fetch-Site': 'none',
+                        'Sec-Fetch-User': '?1',
+                        'Cache-Control': 'max-age=0',
+                        'DNT': '1'
                     }
                     
-                    # Add retry mechanism
+                    # Add retry mechanism with exponential backoff
                     max_retries = 3
-                    retry_delay = 2  # seconds
+                    base_delay = 2  # seconds
                     
                     for attempt in range(max_retries):
                         try:
-                            response = requests.get(url, headers=headers, timeout=10)
+                            # Create a session for persistent cookies
+                            session = requests.Session()
+                            
+                            # First, try to get the main page
+                            response = session.get(url, headers=headers, timeout=15)
                             response.raise_for_status()
-                            break
+                            
+                            # Parse the content
+                            soup = BeautifulSoup(response.content, 'html.parser')
+                            
+                            # Remove unwanted elements
+                            for element in soup(['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript', 'meta', 'link', 'aside']):
+                                element.decompose()
+                            
+                            # Special handling for AI news websites
+                            if 'artificialintelligence-news.com' in url:
+                                # Try to find the main content area
+                                main_content = soup.find('div', class_='td-main-content') or \
+                                             soup.find('div', class_='td-ss-main-content') or \
+                                             soup.find('article')
+                                
+                                if main_content:
+                                    # Get all article elements
+                                    articles = main_content.find_all(['article', 'div'], class_=lambda x: x and ('post' in str(x).lower() or 'article' in str(x).lower()))
+                                    
+                                    if articles:
+                                        article_text = ""
+                                        for article in articles:
+                                            # Get the title
+                                            title = article.find(['h1', 'h2', 'h3'])
+                                            if title:
+                                                article_text += title.get_text(strip=True) + "\n\n"
+                                            
+                                            # Get the content
+                                            content = article.find(['div', 'section'], class_=lambda x: x and ('content' in str(x).lower() or 'entry' in str(x).lower()))
+                                            if content:
+                                                article_text += content.get_text(separator='\n', strip=True) + "\n\n"
+                                        
+                                        if article_text:
+                                            break
+                            
+                            # If no special handling worked, try general selectors
+                            if not article_text:
+                                article_selectors = [
+                                    'article', '.article-body', '.entry-content', 
+                                    '.story-body', '.post-content', '.news-content',
+                                    'main', '.main-content', '#content', '.content',
+                                    '.article-content', '.post-body', '.story-content',
+                                    '[role="main"]', '.article', '.story',
+                                    '.td-main-content', '.td-ss-main-content'
+                                ]
+                                
+                                for selector in article_selectors:
+                                    article_elements = soup.select(selector)
+                                    if article_elements:
+                                        for elem in article_elements:
+                                            article_text += elem.get_text(separator='\n', strip=True) + "\n"
+                                        break
+                            
+                            # If still no content, try to get main content
+                            if not article_text:
+                                main_content = soup.find('main') or \
+                                             soup.find('article') or \
+                                             soup.find('div', class_=lambda x: x and ('content' in str(x).lower() or 'article' in str(x).lower() or 'post' in str(x).lower()))
+                                
+                                if main_content:
+                                    article_text = main_content.get_text(separator='\n', strip=True)
+                                else:
+                                    article_text = soup.body.get_text(separator='\n', strip=True)
+                            
+                            # Clean up the text
+                            import re
+                            # Remove excessive whitespace and newlines
+                            article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
+                            # Remove very short lines (likely navigation or ads)
+                            article_text = '\n'.join(line for line in article_text.split('\n') if len(line.strip()) > 20)
+                            # Remove common non-content text
+                            article_text = re.sub(r'(?i)(privacy policy|terms of use|cookie policy|all rights reserved).*$', '', article_text, flags=re.MULTILINE)
+                            
+                            news_text = article_text.strip()
+                            
+                            if news_text:
+                                break
+                                
                         except (requests.exceptions.RequestException, requests.exceptions.ConnectionError) as e:
                             if attempt == max_retries - 1:  # Last attempt
                                 raise e
-                            st.warning(f"Attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
-                            time.sleep(retry_delay)
-                    
-                    # Parse the content
-                    soup = BeautifulSoup(response.content, 'html.parser')
-                    
-                    # Remove script, style, and other non-content elements
-                    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript', 'meta', 'link']):
-                        element.decompose()
-                    
-                    # Extract text from article body - adjust selectors based on common news sites
-                    article_selectors = [
-                        'article', '.article-body', '.entry-content', 
-                        '.story-body', '.post-content', '.news-content',
-                        'main', '.main-content', '#content', '.content',
-                        '.article-content', '.post-body', '.story-content',
-                        '[role="main"]', '.article', '.story'
-                    ]
-                    
-                    article_text = ""
-                    for selector in article_selectors:
-                        article_elements = soup.select(selector)
-                        if article_elements:
-                            for elem in article_elements:
-                                article_text += elem.get_text(separator='\n', strip=True) + "\n"
-                            break
-                    
-                    # If no article found with selectors, try to get main content
-                    if not article_text:
-                        # Try to find the main content area
-                        main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=lambda x: x and ('content' in x.lower() or 'article' in x.lower() or 'post' in x.lower()))
-                        if main_content:
-                            article_text = main_content.get_text(separator='\n', strip=True)
-                        else:
-                            # Fallback to body text, but clean it up
-                            article_text = soup.body.get_text(separator='\n', strip=True)
-                    
-                    # Clean up the text
-                    import re
-                    # Remove excessive whitespace and newlines
-                    article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
-                    # Remove very short lines (likely navigation or ads)
-                    article_text = '\n'.join(line for line in article_text.split('\n') if len(line.strip()) > 20)
-                    # Remove common non-content text
-                    article_text = re.sub(r'(?i)(privacy policy|terms of use|cookie policy|all rights reserved).*$', '', article_text, flags=re.MULTILINE)
-                    
-                    news_text = article_text.strip()
+                            delay = base_delay * (2 ** attempt)  # Exponential backoff
+                            st.warning(f"Attempt {attempt + 1} failed. Retrying in {delay} seconds...")
+                            time.sleep(delay)
                     
                     # Display a preview
                     if news_text:
