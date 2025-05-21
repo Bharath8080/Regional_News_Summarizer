@@ -68,10 +68,19 @@ def get_streaming_chat_model(callback_handler=None):
         callbacks=[callback_handler] if callback_handler else None
     )
 
-# App header and branding
-st.sidebar.image("https://r2.erweima.ai/i/EJJ5qsqnSX-l5xsDwWN1SQ.png", use_container_width=True)
 with st.sidebar:
     st.title("📰 News Summarizer")
+    
+    # API Key input
+    st.subheader("🔑 API Settings")
+    api_key = st.text_input("Sutra API Key", type="password", value=os.getenv("SUTRA_API_KEY", ""))
+    st.markdown("Get your API key from [SUTRA API](https://www.two.ai/sutra/api)")
+    
+    if not api_key:
+        st.warning("⚠️ Please enter your Sutra API key to use the chatbot.")
+        st.stop()
+    else:
+        os.environ["SUTRA_API_KEY"] = api_key
     
     # Create tabs in sidebar - removed the About tab
     sidebar_tab1, sidebar_tab2 = st.tabs(["Settings", "Advanced"])
@@ -134,7 +143,7 @@ with st.sidebar:
 
 # Main content area
 st.markdown(
-    f'<h1><img src="https://framerusercontent.com/images/9vH8BcjXKRcC5OrSfkohhSyDgX0.png" width="60"/> Regional News Summarizer 📰</h1>',
+    f'<h1><img src="https://framerusercontent.com/images/9vH8BcjXKRcC5OrSfkohhSyDgX0.png" width="60" style="vertical-align: middle;"/> Regional News Summarizer <img src="https://media.baamboozle.com/uploads/images/821733/1656648869_810178_gif-url.gif" width="70" height="70" style="vertical-align: middle;"/></h1>',
     unsafe_allow_html=True
 )
 
