@@ -279,19 +279,25 @@ with tab1:
                                 
                                 if main_content:
                                     article_text = main_content.get_text(separator='\n', strip=True)
-                                else:
+                                elif soup.body:  # Check if body exists
                                     article_text = soup.body.get_text(separator='\n', strip=True)
+                                else:
+                                    # If no body, try to get text from the entire soup
+                                    article_text = soup.get_text(separator='\n', strip=True)
                             
                             # Clean up the text
-                            import re
-                            # Remove excessive whitespace and newlines
-                            article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
-                            # Remove very short lines (likely navigation or ads)
-                            article_text = '\n'.join(line for line in article_text.split('\n') if len(line.strip()) > 20)
-                            # Remove common non-content text
-                            article_text = re.sub(r'(?i)(privacy policy|terms of use|cookie policy|all rights reserved).*$', '', article_text, flags=re.MULTILINE)
-                            
-                            news_text = article_text.strip()
+                            if article_text:  # Only clean if we have content
+                                import re
+                                # Remove excessive whitespace and newlines
+                                article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
+                                # Remove very short lines (likely navigation or ads)
+                                article_text = '\n'.join(line for line in article_text.split('\n') if len(line.strip()) > 20)
+                                # Remove common non-content text
+                                article_text = re.sub(r'(?i)(privacy policy|terms of use|cookie policy|all rights reserved).*$', '', article_text, flags=re.MULTILINE)
+                                
+                                news_text = article_text.strip()
+                            else:
+                                news_text = ""
                             
                             if news_text:
                                 break
