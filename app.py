@@ -11,7 +11,6 @@ from dotenv import load_dotenv
 
 # Load environment variables
 load_dotenv()
-api_key = os.getenv("SUTRA_API_KEY")
 
 # Page configuration
 st.set_page_config(
@@ -68,6 +67,15 @@ def get_streaming_chat_model(callback_handler=None):
         callbacks=[callback_handler] if callback_handler else None
     )
 
+# Main content area
+st.markdown(
+    f'<h1><img src="https://framerusercontent.com/images/9vH8BcjXKRcC5OrSfkohhSyDgX0.png" width="60" style="vertical-align: middle;"/> Regional News Summarizer <img src="https://media.baamboozle.com/uploads/images/821733/1656648869_810178_gif-url.gif" width="70" height="70" style="vertical-align: middle;"/></h1>',
+    unsafe_allow_html=True
+)
+
+# Setup tabs
+tab1, tab2 = st.tabs(["✍️ Summarize News", "📋 History"])
+
 with st.sidebar:
     st.title("📰 News Summarizer")
     
@@ -78,7 +86,6 @@ with st.sidebar:
     
     if not api_key:
         st.warning("⚠️ Please enter your Sutra API key to use the chatbot.")
-        st.stop()
     else:
         os.environ["SUTRA_API_KEY"] = api_key
     
@@ -140,15 +147,6 @@ with st.sidebar:
                 options=["Off", "On"],
                 index=1  # Default to "On"
             )
-
-# Main content area
-st.markdown(
-    f'<h1><img src="https://framerusercontent.com/images/9vH8BcjXKRcC5OrSfkohhSyDgX0.png" width="60" style="vertical-align: middle;"/> Regional News Summarizer <img src="https://media.baamboozle.com/uploads/images/821733/1656648869_810178_gif-url.gif" width="70" height="70" style="vertical-align: middle;"/></h1>',
-    unsafe_allow_html=True
-)
-
-# Setup tabs
-tab1, tab2 = st.tabs(["✍️ Summarize News", "📋 History"])
 
 with tab1:
     # Input options
