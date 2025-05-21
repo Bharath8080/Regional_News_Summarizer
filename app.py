@@ -182,6 +182,9 @@ with tab1:
         url = st.text_input("Enter news article URL:")
         if url:
             with st.spinner("Extracting content from URL..."):
+                # Initialize article_text
+                article_text = ""
+                
                 try:
                     # Add http:// if not present
                     if not url.startswith(('http://', 'https://')):
