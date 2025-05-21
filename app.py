@@ -1,14 +1,11 @@
 import os
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
 import PyPDF2
 import io
 from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 from langchain.callbacks.base import BaseCallbackHandler
 from dotenv import load_dotenv
-import time
 
 # Load environment variables
 load_dotenv()
@@ -90,64 +87,26 @@ with st.sidebar:
     else:
         os.environ["SUTRA_API_KEY"] = api_key
     
-    # Create tabs in sidebar - removed the About tab
-    sidebar_tab1, sidebar_tab2 = st.tabs(["Settings", "Advanced"])
+    # Settings
+    st.subheader("⚙️ Settings")
     
-    with sidebar_tab1:
-        # Input language selector
-        input_language = st.selectbox("Source Language:", languages, index=0)
-        
-        # Output language selector
-        output_language = st.selectbox("Summary Language:", languages, index=0)
-        
-        # Summary length as select_slider
-        summary_length = st.selectbox(
+    # Input language selector
+    input_language = st.selectbox("Source Language:", languages, index=0)
+    
+    # Output language selector
+    output_language = st.selectbox("Summary Language:", languages, index=0)
+    
+    # Summary length as select_slider
+    summary_length = st.selectbox(
         "Summary Length:",
         options=["Very Short", "Short", "Medium", "Detailed", "Comprehensive"],
-        )
-        
-        # Style options
-        summary_style = st.selectbox(
-            "Summary Style:",
-            ["Neutral", "Simplified", "Academic", "Conversational", "Bullet Points"]
-        )
+    )
     
-    with sidebar_tab2:
-        # Moved from tab1 to tab2: Focus options
-        summary_focus = st.multiselect(
-            "Focus On:",
-            ["Key Facts", "Statistics", "Quotes", "Background Context", "Future Implications"],
-            default=["Key Facts"]
-        )
-        
-        # Advanced Options
-        st.subheader("Advanced Options")
-        
-        # Set max_length to 0 (no limit) directly in the code
-        max_length = 0
-        
-        # Text cleaning options as tickmarks (radio buttons)
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            clean_whitespace = st.radio(
-                "Clean whitespace:",
-                options=["Off", "On"],
-                index=1  # Default to "On"
-            )
-            
-            remove_urls = st.radio(
-                "Remove URLs:",
-                options=["Off", "On"],
-                index=1  # Default to "On"
-            )
-        
-        with col2:
-            remove_html = st.radio(
-                "Remove HTML tags:",
-                options=["Off", "On"],
-                index=1  # Default to "On"
-            )
+    # Style options
+    summary_style = st.selectbox(
+        "Summary Style:",
+        ["Neutral", "Simplified", "Academic", "Conversational", "Bullet Points"]
+    )
 
 with tab1:
     # Input options
@@ -181,28 +140,6 @@ with tab1:
     # Process button
     if st.button("Generate Summary"):
         if news_text:
-            # Apply preprocessing if needed
-            if max_length > 0 and len(news_text) > max_length:
-                news_text = news_text[:max_length]
-                st.info(f"Text truncated to {max_length} characters for processing.")
-            
-            # Convert select_slider values to boolean
-            if remove_urls == "On":
-                import re
-                news_text = re.sub(r'http\S+', '', news_text)
-            
-            if clean_whitespace == "On":
-                import re
-                news_text = re.sub(r'\s+', ' ', news_text).strip()
-            
-            if remove_html == "On":
-                from bs4 import BeautifulSoup
-                news_text = BeautifulSoup(news_text, "html.parser").get_text()
-                
-            # Create session state for history if not exists
-            if "history" not in st.session_state:
-                st.session_state.history = []
-                
             try:
                 # Create message placeholder
                 response_placeholder = st.empty()
@@ -214,15 +151,12 @@ with tab1:
                 chat = get_streaming_chat_model(stream_handler)
                 
                 # Create prompt based on user selections
-                focus_points = ", ".join(summary_focus) if summary_focus else "Key Facts"
-                
                 prompt = f"""
                 You are a professional news summarizer. Summarize the following news article in {output_language}.
                 
                 Article language: {input_language}
                 Requested summary length: {summary_length}
                 Summary style: {summary_style}
-                Focus on: {focus_points}
                 
                 Please provide a clear, accurate summary that captures the main points of the article.
                 If the article contains statistics or quotes, include the most significant ones.
@@ -286,14 +220,8 @@ with tab2:
                     st.caption(f"Language: {item['output_language']} | Style: {item['style']} | Length: {item['length']}")
                 
                 # Options for this summary
-                col1, col2, col3 = st.columns(3)
+                col1, col2 = st.columns(2)
                 with col1:
-                    # Option to regenerate with different settings
-                    if st.button("Regenerate with current settings", key=f"regen_{i}"):
-                        # Copy the text to the main tab
-                        st.session_state.regenerate_text = item["original_text"]
-                        st.rerun()
-                with col2:
                     # Option to download this summary
                     st.download_button(
                         label="Download Summary",
@@ -302,69 +230,5 @@ with tab2:
                         mime="text/plain",
                         key=f"dl_{i}"
                     )
-                with col3:
-                    # Option to translate to another language
-                    if st.button("Translate to new language", key=f"trans_{i}"):
-                        # Set session state to indicate translation is needed
-                        st.session_state.translate_item = item
-                        st.session_state.translating = True
-                        st.rerun()
     else:
         st.info("No summaries generated yet. Use the Summarize News tab to create summaries.")
-        
-# Add a translation popup if needed
-if "translating" in st.session_state and st.session_state.translating:
-    with st.sidebar:
-        st.markdown("### 🔄 Translate Summary")
-        target_lang = st.selectbox("Target Language:", languages)
-        
-        if st.button("Translate"):
-            item = st.session_state.translate_item
-            
-            try:
-                # Create message placeholder
-                with st.spinner(f"Translating to {target_lang}..."):
-                    chat = get_base_chat_model()
-                    
-                    # Create prompt for translation
-                    prompt = f"""
-                    Translate the following summary from {item['output_language']} to {target_lang}:
-                    
-                    {item['summary']}
-                    """
-                    
-                    # Generate translation
-                    messages = [HumanMessage(content=prompt)]
-                    response = chat.invoke(messages)
-                    translation = response.content
-                    
-                    # Add to history
-                    st.session_state.history.append({
-                        "original_text": item["original_text"],
-                        "summary": translation,
-                        "input_language": item["input_language"],
-                        "output_language": target_lang,
-                        "length": item["length"],
-                        "style": item["style"] + " (Translated)"
-                    })
-                    
-                # Clear translation state
-                st.session_state.translating = False
-                del st.session_state.translate_item
-                st.rerun()
-                    
-            except Exception as e:
-                st.error(f"Translation error: {str(e)}")
-        
-        if st.button("Cancel"):
-            st.session_state.translating = False
-            if "translate_item" in st.session_state:
-                del st.session_state.translate_item
-            st.rerun()
-
-# Handle regeneration
-if "regenerate_text" in st.session_state:
-    # Switch to the first tab and populate with the text
-    st.session_state.news_text = st.session_state.regenerate_text
-    del st.session_state.regenerate_text
-    # Note: The actual population has to happen in the next run
