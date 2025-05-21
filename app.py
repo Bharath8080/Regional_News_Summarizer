@@ -8,6 +8,7 @@ from langchain_openai import ChatOpenAI
 from langchain.schema import HumanMessage
 from langchain.callbacks.base import BaseCallbackHandler
 from dotenv import load_dotenv
+import time
 
 # Load environment variables
 load_dotenv()
@@ -186,24 +187,45 @@ with tab1:
                     if not url.startswith(('http://', 'https://')):
                         url = 'https://' + url
                         
-                    # Send request with a user agent to avoid being blocked
+                    # Send request with a user agent and timeout
                     headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Connection': 'keep-alive',
+                        'Upgrade-Insecure-Requests': '1',
                     }
-                    response = requests.get(url, headers=headers, timeout=10)
-                    response.raise_for_status()  # Raise exception for 4XX/5XX responses
+                    
+                    # Add retry mechanism
+                    max_retries = 3
+                    retry_delay = 2  # seconds
+                    
+                    for attempt in range(max_retries):
+                        try:
+                            response = requests.get(url, headers=headers, timeout=10)
+                            response.raise_for_status()
+                            break
+                        except (requests.exceptions.RequestException, requests.exceptions.ConnectionError) as e:
+                            if attempt == max_retries - 1:  # Last attempt
+                                raise e
+                            st.warning(f"Attempt {attempt + 1} failed. Retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
                     
                     # Parse the content
                     soup = BeautifulSoup(response.content, 'html.parser')
                     
-                    # Remove script and style elements
-                    for script in soup(["script", "style", "nav", "footer", "header"]):
-                        script.extract()
+                    # Remove script, style, and other non-content elements
+                    for element in soup(['script', 'style', 'nav', 'footer', 'header', 'iframe', 'noscript', 'meta', 'link']):
+                        element.decompose()
                     
                     # Extract text from article body - adjust selectors based on common news sites
-                    article_selectors = ['article', '.article-body', '.entry-content', 
-                                         '.story-body', '.post-content', '.news-content',
-                                         'main', '.main-content', '#content']
+                    article_selectors = [
+                        'article', '.article-body', '.entry-content', 
+                        '.story-body', '.post-content', '.news-content',
+                        'main', '.main-content', '#content', '.content',
+                        '.article-content', '.post-body', '.story-content',
+                        '[role="main"]', '.article', '.story'
+                    ]
                     
                     article_text = ""
                     for selector in article_selectors:
@@ -213,15 +235,26 @@ with tab1:
                                 article_text += elem.get_text(separator='\n', strip=True) + "\n"
                             break
                     
-                    # If no article found with selectors, use body text
+                    # If no article found with selectors, try to get main content
                     if not article_text:
-                        article_text = soup.get_text(separator='\n', strip=True)
-                        
-                    # Clean up the text - remove excessive newlines
-                    import re
-                    article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
+                        # Try to find the main content area
+                        main_content = soup.find('main') or soup.find('article') or soup.find('div', class_=lambda x: x and ('content' in x.lower() or 'article' in x.lower() or 'post' in x.lower()))
+                        if main_content:
+                            article_text = main_content.get_text(separator='\n', strip=True)
+                        else:
+                            # Fallback to body text, but clean it up
+                            article_text = soup.body.get_text(separator='\n', strip=True)
                     
-                    news_text = article_text
+                    # Clean up the text
+                    import re
+                    # Remove excessive whitespace and newlines
+                    article_text = re.sub(r'\n\s*\n', '\n\n', article_text)
+                    # Remove very short lines (likely navigation or ads)
+                    article_text = '\n'.join(line for line in article_text.split('\n') if len(line.strip()) > 20)
+                    # Remove common non-content text
+                    article_text = re.sub(r'(?i)(privacy policy|terms of use|cookie policy|all rights reserved).*$', '', article_text, flags=re.MULTILINE)
+                    
+                    news_text = article_text.strip()
                     
                     # Display a preview
                     if news_text:
@@ -229,11 +262,14 @@ with tab1:
                         with st.expander("Preview extracted content"):
                             st.text(news_text[:1000] + "..." if len(news_text) > 1000 else news_text)
                     else:
-                        st.warning("Could not extract meaningful content from the URL.")
+                        st.warning("Could not extract meaningful content from the URL. Please try pasting the content manually.")
                         
-                except Exception as e:
+                except requests.exceptions.RequestException as e:
                     st.error(f"Error fetching content: {str(e)}")
                     st.info("Please check the URL or paste the content manually.")
+                except Exception as e:
+                    st.error(f"Error processing content: {str(e)}")
+                    st.info("Please try pasting the content manually.")
     
     # Process button
     if st.button("Generate Summary"):
